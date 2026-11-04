@@ -1,0 +1,70 @@
+{
+  "active_profile": "bus",
+  "profiles": {
+    "bus": {
+      "description": "School bus profile. In the real vehicle each zone below is meant to be fed by its own physical camera (front/left/right/rear). A single laptop webcam can only ever represent one of them at a time, so only FRONT is marked active for the webcam demo.",
+      "validated": false,
+      "zones": [
+        {
+          "name": "FRONT",
+          "active": true,
+          "color": [0, 0, 255],
+          "polygon": [[0.10, 1.0], [0.90, 1.0], [0.72, 0.40], [0.28, 0.40]],
+          "note": "Near-field trapezoid in front of the vehicle, where a driver's view over the hood is blocked. Sized for a laptop webcam framing a person standing a few metres away; not calibrated against real bus camera footage."
+        },
+        {
+          "name": "LEFT",
+          "active": false,
+          "color": [0, 165, 255],
+          "polygon": [[0.0, 0.3], [0.35, 0.3], [0.35, 1.0], [0.0, 1.0]],
+          "note": "Placeholder only. Requires a separate side-mounted camera; not exercised by a single front-facing webcam."
+        },
+        {
+          "name": "RIGHT",
+          "active": false,
+          "color": [0, 165, 255],
+          "polygon": [[0.65, 0.3], [1.0, 0.3], [1.0, 1.0], [0.65, 1.0]],
+          "note": "Placeholder only. Requires a separate side-mounted camera; not exercised by a single front-facing webcam."
+        },
+        {
+          "name": "REAR",
+          "active": false,
+          "color": [255, 0, 255],
+          "polygon": [[0.20, 0.0], [0.80, 0.0], [0.80, 0.25], [0.20, 0.25]],
+          "note": "Placeholder only. Requires a separate rear-mounted camera; not exercised by a single front-facing webcam."
+        }
+      ]
+    },
+    "car": {
+      "description": "Stub profile, not tested. Copy and adjust zone polygons once car footage/camera placement is available.",
+      "validated": false,
+      "zones": [
+        {
+          "name": "FRONT",
+          "active": true,
+          "color": [0, 0, 255],
+          "polygon": [[0.15, 1.0], [0.85, 1.0], [0.65, 0.5], [0.35, 0.5]],
+          "note": "Untested placeholder."
+        }
+      ]
+    },
+    "truck": {
+      "description": "Stub profile, not tested. Copy and adjust zone polygons once truck footage/camera placement is available.",
+      "validated": false,
+      "zones": [
+        {
+          "name": "FRONT",
+          "active": true,
+          "color": [0, 0, 255],
+          "polygon": [[0.05, 1.0], [0.95, 1.0], [0.75, 0.35], [0.25, 0.35]],
+          "note": "Untested placeholder."
+        }
+      ]
+    },
+    "custom": {
+      "description": "Empty template for a custom vehicle profile. Add zones with normalized (0-1) polygon coordinates.",
+      "validated": false,
+      "zones": []
+    }
+  }
+}

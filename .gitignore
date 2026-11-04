@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.egg-info/
+
+# Large model weights — consider Git LFS or a download script instead of committing this
+models/*.pt
+
+# Runtime-generated logs
+logs/*.csv
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/
