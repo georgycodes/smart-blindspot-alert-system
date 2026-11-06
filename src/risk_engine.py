@@ -14,6 +14,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Deque, Dict, List, Optional, Tuple
 
+from trajectory_prediction import PredictedZoneEntry
+
 RISK_SAFE = "SAFE"
 RISK_LOW = "LOW"
 RISK_MODERATE = "MODERATE"
@@ -33,12 +35,13 @@ DIR_UNKNOWN = "UNKNOWN"
 
 @dataclass
 class TrackState:
-    positions: Deque[Tuple[float, float, float]]
+    positions: Deque[Tuple[float, float, float, float]]  # (t, cx_frac, cy_frac, box_h_frac)
     direction: str = DIR_UNKNOWN
     risk: str = RISK_SAFE
     risk_streak: int = 0
     zone_name: Optional[str] = None
     reasons: List[str] = field(default_factory=list)
+    predicted_entry: Optional[PredictedZoneEntry] = None
 
 
 class RiskEngine:
@@ -67,6 +70,10 @@ class RiskEngine:
             self.tracks[track_id] = TrackState(positions=deque(maxlen=self.history_len))
         return self.tracks[track_id]
 
+    def get_positions(self, track_id: int) -> List[Tuple[float, float, float, float]]:
+        state = self.tracks.get(track_id)
+        return list(state.positions) if state else []
+
     def forget_stale(self, seen_ids) -> None:
         for tid in [t for t in self.tracks if t not in seen_ids]:
             del self.tracks[tid]
@@ -75,8 +82,8 @@ class RiskEngine:
         if len(state.positions) < 2:
             return DIR_UNKNOWN
         window = list(state.positions)[-self.smoothing_window:]
-        _, x0, h0 = window[0]
-        _, x1, h1 = window[-1]
+        _, x0, _, h0 = window[0]
+        _, x1, _, h1 = window[-1]
         dx = x1 - x0
         dh = h1 - h0  # growing box height fraction ~ getting closer to the camera
 
@@ -127,15 +134,44 @@ class RiskEngine:
             reasons.append("Not enough tracking history yet to judge movement.")
         return reasons
 
-    def update(self, track_id: int, cx_frac: float, box_h_frac: float,
+    def update(self, track_id: int, cx_frac: float, cy_frac: float, box_h_frac: float,
                zone_name: Optional[str], t: float) -> TrackState:
         state = self._get(track_id)
-        state.positions.append((t, cx_frac, box_h_frac))
+        state.positions.append((t, cx_frac, cy_frac, box_h_frac))
         state.direction = self._classify_direction(state)
         state.zone_name = zone_name
+        state.predicted_entry = None
         state.reasons = self._build_reasons(zone_name, state.direction)
 
-        target_risk = self._risk_for(zone_name, state.direction)
+        self._set_risk(state, self._risk_for(zone_name, state.direction))
+        return state
+
+    def apply_prediction(self, track_id: int, predicted_entry: Optional[PredictedZoneEntry]) -> TrackState:
+        """Folds a predictive zone-conflict result (from trajectory_prediction.py)
+        into the track's risk/explanation. Only ever escalates -- a predicted
+        future conflict never overrides a worse *current* situation, and a
+        person already inside a zone doesn't get a redundant prediction for
+        the same zone (the caller excludes that case)."""
+        state = self._get(track_id)
+        state.predicted_entry = predicted_entry
+        if predicted_entry is None:
+            return state
+
+        if predicted_entry.eta_seconds <= 1.5:
+            predicted_risk = RISK_HIGH
+        else:
+            predicted_risk = RISK_MODERATE
+
+        if RISK_ORDER[predicted_risk] > RISK_ORDER[state.risk]:
+            self._set_risk(state, predicted_risk)
+
+        state.reasons.append(
+            f"Projected path (simple linear extrapolation) would enter the "
+            f"{predicted_entry.zone_name} zone in ~{predicted_entry.eta_seconds}s if this trend continues."
+        )
+        return state
+
+    def _set_risk(self, state: TrackState, target_risk: str) -> None:
         if target_risk == state.risk:
             state.risk_streak += 1
         elif RISK_ORDER[target_risk] > RISK_ORDER[state.risk]:
@@ -146,5 +182,3 @@ class RiskEngine:
             state.risk_streak = 1
         else:
             state.risk_streak += 1
-
-        return state

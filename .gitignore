@@ -10,6 +10,11 @@ models/*.pt
 # Runtime-generated logs
 logs/*.csv
 
+# Runtime-generated event database and uploaded test videos
+data/events/*.db
+data/videos/*
+!data/videos/.gitkeep
+
 # OS/editor noise
 .DS_Store
 .idea/
