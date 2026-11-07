@@ -1,0 +1,25 @@
+{
+  "_comment": "Illustrative only -- 'video' doesn't point at a real file here. This is the schema run_detection_eval() and run_tracking_eval() in src/evaluation.py expect. Replace with real hand-annotated data (e.g. from CVAT or Label Studio) before running an evaluation for real.",
+
+  "detection_annotations_example": {
+    "video": "data/videos/your_test_clip.mp4",
+    "frames": {
+      "0": [[120, 80, 260, 420]],
+      "30": [[140, 90, 270, 430], [500, 100, 600, 400]],
+      "60": []
+    }
+  },
+
+  "tracking_annotations_example": {
+    "video": "data/videos/your_test_clip.mp4",
+    "frames": {
+      "0": [{"gt_id": 1, "bbox": [120, 80, 260, 420]}],
+      "30": [{"gt_id": 1, "bbox": [140, 90, 270, 430]}, {"gt_id": 2, "bbox": [500, 100, 600, 400]}],
+      "60": [{"gt_id": 1, "bbox": [160, 95, 275, 435]}]
+    }
+  },
+
+  "predictive_ground_truth_example": [
+    {"zone": "FRONT", "entry_frame": 145}
+  ]
+}

@@ -38,7 +38,8 @@ class TrackState:
     positions: Deque[Tuple[float, float, float, float]]  # (t, cx_frac, cy_frac, box_h_frac)
     direction: str = DIR_UNKNOWN
     risk: str = RISK_SAFE
-    risk_streak: int = 0
+    pending_risk: Optional[str] = None  # a lower risk waiting out the hysteresis window
+    pending_streak: int = 0
     zone_name: Optional[str] = None
     reasons: List[str] = field(default_factory=list)
     predicted_entry: Optional[PredictedZoneEntry] = None
@@ -173,12 +174,27 @@ class RiskEngine:
 
     def _set_risk(self, state: TrackState, target_risk: str) -> None:
         if target_risk == state.risk:
-            state.risk_streak += 1
-        elif RISK_ORDER[target_risk] > RISK_ORDER[state.risk]:
+            # stable at the committed risk -- any pending de-escalation lapses
+            state.pending_risk = None
+            state.pending_streak = 0
+            return
+
+        if RISK_ORDER[target_risk] > RISK_ORDER[state.risk]:
             state.risk = target_risk  # escalate immediately
-            state.risk_streak = 1
-        elif state.risk_streak >= self.hysteresis_frames:
-            state.risk = target_risk  # de-escalate only after holding steady
-            state.risk_streak = 1
+            state.pending_risk = None
+            state.pending_streak = 0
+            return
+
+        # target is lower than the committed risk: only commit once it has
+        # been requested for `hysteresis_frames` consecutive calls, so a
+        # one-frame blip doesn't instantly erase a real CRITICAL/HIGH.
+        if state.pending_risk == target_risk:
+            state.pending_streak += 1
         else:
-            state.risk_streak += 1
+            state.pending_risk = target_risk
+            state.pending_streak = 1
+
+        if state.pending_streak >= self.hysteresis_frames:
+            state.risk = target_risk
+            state.pending_risk = None
+            state.pending_streak = 0

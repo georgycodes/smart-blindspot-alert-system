@@ -60,6 +60,7 @@ class GuardianPipeline:
         self.tracker = tracker
         self.prediction_horizon_s = prediction_horizon_s
         self._prev_time = 0.0
+        self.frame_index = -1  # incremented to 0 on the first process_frame() call
 
         self.event_manager = (
             EventManager(db_path, vehicle_profile=self.zones.profile_name, source_video=source_label)
@@ -67,6 +68,7 @@ class GuardianPipeline:
         )
 
     def process_frame(self, frame, draw: bool = True) -> FrameResult:
+        self.frame_index += 1
         frame_h, frame_w = frame.shape[:2]
         now = time.time()
         fps = 1.0 / (now - self._prev_time) if self._prev_time else 0.0
@@ -115,7 +117,8 @@ class GuardianPipeline:
                     overall_risk = state.risk
 
                 if self.event_manager:
-                    self.event_manager.update(tid, state.risk, zone_name, state.direction, state.reasons)
+                    self.event_manager.update(tid, state.risk, zone_name, state.direction, state.reasons,
+                                               frame_index=self.frame_index)
 
                 people.append(PersonInfo(
                     track_id=tid, bbox=(x1, y1, x2, y2), confidence=confidence,

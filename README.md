@@ -19,15 +19,18 @@ Started as a Semester 6 mini-project (detection + distance heuristic + alerts); 
 - **Streamlit dashboard** (`dashboard/app.py`) — five tabs, all driven by the same pipeline as the CLI script:
   - **Live Monitoring** — start/stop webcam monitoring, pick a vehicle profile, adjust detection confidence, mute/unmute audio, live annotated feed, FPS/risk/zone-occupancy readout.
   - **Predictive Safety** — a live per-person panel: zone, direction, predicted entry + ETA, and the reason behind the current risk level.
-  - **Zone Configuration** — view and edit a profile's zone polygons (table-based coordinate editing, not drag-and-drop yet) with a live preview overlay, saved back to `config/vehicle_profiles.json`.
-  - **Incident Analytics** — real charts (Plotly) and a filterable event table computed from the SQLite log; shows an honest empty state with no events yet, never fabricated numbers.
+  - **Zone Configuration** — a visual, click-to-place polygon editor: click points directly on the camera preview to draw a zone's boundary, with live preview, undo/clear/reset, and save back to `config/vehicle_profiles.json`.
+  - **Incident Analytics** — real charts (Plotly) and a filterable event table computed from the SQLite log; shows an honest empty state with no events yet, never fabricated numbers. Includes **incident replay** for events whose source video is still in `data/videos/` (re-runs the full pipeline over the frames around that event so the original detection/zone/risk overlays show up again, scrubbable frame by frame). Live webcam events have no saved recording, so they're honestly marked as not replayable.
   - **Scenario Simulator** — upload or pick a test video and run it through the exact same pipeline with start/pause/resume/stop controls, independent of the live webcam.
+- **Evaluation suite** (`src/evaluation.py`) — detection precision/recall/F1 (IoU-matched against hand-annotated ground-truth boxes), tracking ID-switch counting, predictive zone-entry accuracy + average warning lead time, and performance (FPS, per-frame processing time, CPU/memory via `psutil`). Detection/tracking/predictive metrics need ground truth this project doesn't have real footage for yet — see "Running an evaluation" below; the module refuses to fabricate numbers in its place. Performance metrics need no ground truth and have been run for real (see `reports/performance_report.md`).
+- **Automated tests** (`tests/`, pytest) — 42 tests covering zone geometry, the risk engine (including hysteresis), trajectory prediction, the event state machine, the evaluation math (via synthetic/fake detector output), and one real end-to-end integration test that loads the actual YOLO model and runs it through the full pipeline.
 
 **Known limitations:**
 - The on-screen distance figure comes from a monocular pinhole-camera heuristic (`estimate_distance()` in `src/blindspot_detection.py`) that assumes an uncalibrated focal length. Treat it as a relative indicator, not a measured distance, until the camera is calibrated.
 - Zone polygons for the `bus` profile are placeholders sized for a laptop webcam demo, not calibrated against real vehicle camera footage.
 - Trajectory prediction is a simple linear extrapolation of recent motion, not a learned motion model — it's deliberately simple and says so.
-- No formal evaluation suite yet (precision/recall, tracking ID-switch rate, warning lead time) — not implemented, not faked.
+- The Zone Configuration editor places points by clicking, not full drag-to-reposition.
+- Detection/tracking/predictive-safety evaluation have not actually been *run* yet — no real annotated test footage exists for this project. The tooling is real and tested (see `tests/test_evaluation.py`); only the performance (FPS/timing) metrics have real measured numbers so far.
 
 ## Project structure
 
@@ -51,15 +54,19 @@ blindspot-human-detection-main/
 │   ├── risk_engine.py          # direction classification + rule-based risk + explanations
 │   ├── trajectory_prediction.py # linear extrapolation + predicted zone-entry/ETA
 │   ├── event_manager.py        # safety-risk event state machine + SQLite persistence
-│   └── video_processor.py      # shared webcam/file frame source
+│   ├── video_processor.py      # shared webcam/file frame source
+│   └── evaluation.py           # detection/tracking/predictive/performance metrics
 ├── dashboard/
 │   ├── app.py                  # Streamlit shell (5 tabs)
 │   ├── monitoring.py           # Tab 1: Live Monitoring
 │   ├── predictive_safety.py    # Tab 2: Predictive Safety
-│   ├── zone_configuration.py   # Tab 3: Zone Configuration
-│   ├── analytics.py            # Tab 4: Incident Analytics
+│   ├── zone_configuration.py   # Tab 3: Zone Configuration (click-to-place editor)
+│   ├── analytics.py            # Tab 4: Incident Analytics (+ incident replay)
 │   ├── simulator.py            # Tab 5: Scenario Simulator
 │   └── paths.py                # shared path constants
+├── tests/                      # pytest suite (unit + one real integration test)
+│   └── fixtures/sample_annotations.json  # ground-truth annotation schema example
+├── reports/                     # evaluation reports (e.g. performance_report.md)
 ├── logs/                       # runtime-generated CSV detection logs (gitignored, from blindspot_detection.py)
 ├── requirements.txt
 └── .gitignore
@@ -113,15 +120,37 @@ Useful flags for `live_demo.py`:
 
 Press `q` in the display window to quit. In the dashboard, use the Start/Stop buttons on the Live Monitoring tab instead.
 
+## Running the tests
+
+```powershell
+.venv\Scripts\python.exe -m pytest tests/ -v
+```
+
+42 tests, including one real integration test that loads the actual YOLO model (so the first run is a little slower while it loads).
+
+## Running an evaluation
+
+Performance (FPS / processing time / resource usage) needs no ground truth and can be run right now:
+
+```powershell
+.venv\Scripts\python.exe src\evaluation.py --source 0 --max-frames 200
+```
+
+This writes `reports/performance_report.json` and `.md`. A real run against this project's development machine is already checked into `reports/performance_report.md`.
+
+Detection, tracking, and predictive-safety evaluation need manually annotated ground truth (bounding boxes, track identities, or confirmed zone-entry frames) — see the schema and worked examples in `tests/fixtures/sample_annotations.json`, and call `run_detection_eval` / `run_tracking_eval` / `run_predictive_eval` from `src/evaluation.py` once you have a real annotated clip. No results are reported here because no annotated footage exists for this project yet.
+
 ## Roadmap
 
 - [x] Short-term trajectory prediction + predictive zone-conflict detection
 - [x] Event/incident persistence (SQLite)
 - [x] Streamlit dashboard: live monitoring, predictive safety panel, zone editor, incident analytics, scenario simulator
-- [ ] Incident replay (jump to and re-watch the video segment behind a logged event)
-- [ ] Drag-and-drop zone editor (currently table-based coordinate editing)
-- [ ] Formal evaluation suite (detection precision/recall, tracking ID-switch rate, warning lead time)
+- [x] Incident replay (for events whose source video is still available)
+- [x] Visual zone editor (click-to-place; not full drag-and-drop yet)
+- [x] Evaluation tooling (detection/tracking/predictive/performance) + automated test suite
+- [ ] Actually run detection/tracking/predictive evaluation against real annotated footage (tooling exists, data doesn't yet)
 - [ ] Zone geometry calibrated against real bus camera footage (currently webcam-demo placeholders)
+- [ ] Full drag-and-drop zone editor (currently click-to-place)
 
 ## Notes for anyone evaluating this project
 

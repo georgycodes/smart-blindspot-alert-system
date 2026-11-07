@@ -32,7 +32,9 @@ CREATE TABLE IF NOT EXISTS events (
     source_video TEXT,
     start_time TEXT NOT NULL,
     end_time TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    start_frame INTEGER,
+    end_frame INTEGER
 );
 """
 
@@ -57,9 +59,20 @@ class EventManager:
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.execute(SCHEMA)
         self.conn.commit()
+        self._ensure_columns()
+
+    def _ensure_columns(self) -> None:
+        """Migrates an events.db created before start_frame/end_frame existed."""
+        cols = {row[1] for row in self.conn.execute("PRAGMA table_info(events)")}
+        if "start_frame" not in cols:
+            self.conn.execute("ALTER TABLE events ADD COLUMN start_frame INTEGER")
+        if "end_frame" not in cols:
+            self.conn.execute("ALTER TABLE events ADD COLUMN end_frame INTEGER")
+        self.conn.commit()
 
     def update(self, track_id: int, risk_level: str, zone: Optional[str], direction: str,
-               reasons: List[str], now_monotonic: Optional[float] = None) -> None:
+               reasons: List[str], now_monotonic: Optional[float] = None,
+               frame_index: Optional[int] = None) -> None:
         now_monotonic = now_monotonic if now_monotonic is not None else time.monotonic()
         triggered = risk_level in TRIGGER_RISKS
         open_event = self._open.get(track_id)
@@ -67,14 +80,14 @@ class EventManager:
         if triggered:
             explanation = " ".join(reasons)
             if open_event is None:
-                row_id = self._insert(track_id, zone, risk_level, direction, explanation)
+                row_id = self._insert(track_id, zone, risk_level, direction, explanation, frame_index)
                 self._open[track_id] = _OpenEvent(row_id=row_id, last_seen_monotonic=now_monotonic,
                                                    peak_risk=risk_level)
             else:
                 open_event.last_seen_monotonic = now_monotonic
                 peak = risk_level if _risk_rank(risk_level) > _risk_rank(open_event.peak_risk) else open_event.peak_risk
                 open_event.peak_risk = peak
-                self._extend(open_event.row_id, peak, zone, direction, explanation)
+                self._extend(open_event.row_id, peak, zone, direction, explanation, frame_index)
         elif open_event is not None and now_monotonic - open_event.last_seen_monotonic > self.grace_seconds:
             self._close(open_event.row_id)
             del self._open[track_id]
@@ -92,21 +105,22 @@ class EventManager:
             self.close_track(track_id)
 
     def _insert(self, track_id: int, zone: Optional[str], risk_level: str, direction: str,
-                explanation: str) -> int:
+                explanation: str, frame_index: Optional[int]) -> int:
         now = datetime.now().isoformat(timespec="seconds")
         event_type = "ZONE_OCCUPANCY" if zone else "PREDICTED_CONFLICT"
         cur = self.conn.execute(
             "INSERT INTO events (tracking_id, vehicle_profile, zone, risk_level, event_type, "
-            "direction, explanation, source_video, start_time, end_time, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)",
+            "direction, explanation, source_video, start_time, end_time, created_at, "
+            "start_frame, end_frame) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
             (track_id, self.vehicle_profile, zone, risk_level, event_type, direction,
-             explanation, self.source_video, now, now),
+             explanation, self.source_video, now, now, frame_index, frame_index),
         )
         self.conn.commit()
         return cur.lastrowid
 
     def _extend(self, row_id: int, peak_risk: str, zone: Optional[str], direction: str,
-                explanation: str) -> None:
+                explanation: str, frame_index: Optional[int]) -> None:
         params = {"risk_level": peak_risk, "direction": direction, "explanation": explanation,
                   "id": row_id}
         set_clause = "risk_level = :risk_level, direction = :direction, explanation = :explanation"
@@ -114,6 +128,9 @@ class EventManager:
             # once actually inside a zone, that supersedes an earlier predicted-only event
             set_clause += ", zone = :zone, event_type = 'ZONE_OCCUPANCY'"
             params["zone"] = zone
+        if frame_index is not None:
+            set_clause += ", end_frame = :end_frame"
+            params["end_frame"] = frame_index
         self.conn.execute(f"UPDATE events SET {set_clause} WHERE id = :id", params)
         self.conn.commit()
 
