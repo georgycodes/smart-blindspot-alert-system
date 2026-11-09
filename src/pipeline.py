@@ -118,7 +118,8 @@ class GuardianPipeline:
 
                 if self.event_manager:
                     self.event_manager.update(tid, state.risk, zone_name, state.direction, state.reasons,
-                                               frame_index=self.frame_index)
+                                               frame_index=self.frame_index,
+                                               predicted_zone=predicted.zone_name if predicted else None)
 
                 people.append(PersonInfo(
                     track_id=tid, bbox=(x1, y1, x2, y2), confidence=confidence,

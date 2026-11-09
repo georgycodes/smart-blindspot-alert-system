@@ -62,6 +62,10 @@ def _stop() -> None:
 
 @st.fragment(run_every=0.03)
 def _playback_fragment(frame_slot, progress_slot) -> None:
+    """Processes one frame per auto-rerun; the time.sleep() below (scaled by
+    the playback-speed slider) is what actually paces it -- Streamlit won't
+    start a new run before this one (sleep included) finishes, so it never
+    piles up regardless of how fast run_every asks."""
     if not st.session_state.sim_playing or st.session_state.sim_paused:
         return
 
@@ -80,7 +84,7 @@ def _playback_fragment(frame_slot, progress_slot) -> None:
     rgb = cv2.cvtColor(result.annotated, cv2.COLOR_BGR2RGB)
     st.session_state.sim_last_frame_rgb = rgb
     st.session_state.sim_last_risk = result.overall_risk
-    frame_slot.image(rgb, channels="RGB", use_container_width=True)
+    frame_slot.image(rgb, channels="RGB", width="stretch", output_format="JPEG")
 
     total = st.session_state.sim_total_frames or 1
     progress_slot.progress(min(st.session_state.sim_frame_idx / total, 1.0),
@@ -142,7 +146,7 @@ def render() -> None:
     if st.session_state.sim_playing:
         _playback_fragment(frame_slot, progress_slot)
     elif st.session_state.sim_last_frame_rgb is not None:
-        frame_slot.image(st.session_state.sim_last_frame_rgb, channels="RGB", use_container_width=True)
+        frame_slot.image(st.session_state.sim_last_frame_rgb, channels="RGB", width="stretch")
 
     if st.session_state.sim_video_name:
         st.subheader(f"Events logged for '{st.session_state.sim_video_name}'")

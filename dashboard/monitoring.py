@@ -34,7 +34,9 @@ def _start(profile: str, conf: float, camera_index: int) -> None:
         model_path=MODEL_PATH, config_path=CONFIG_PATH, profile=profile,
         conf_threshold=conf, db_path=DB_PATH, source_label="webcam-dashboard",
     )
-    st.session_state.cap = open_capture(camera_index)
+    # Lower than the CLI's 1280x720 default: smaller frames mean faster YOLO
+    # inference *and* a smaller image to encode/ship to the browser each tick.
+    st.session_state.cap = open_capture(camera_index, width=960, height=540)
     st.session_state.sound = AlertSound(SOUNDS_DIR, "child_alert.mp3", "adult_warning.mp3")
     st.session_state.monitoring = True
     st.session_state.monitor_error = None
@@ -53,8 +55,14 @@ def _stop() -> None:
         st.session_state.pipeline = None
 
 
-@st.fragment(run_every=0.05)
-def _live_fragment(frame_slot) -> None:
+@st.fragment(run_every=0.1)
+def _live_fragment(frame_slot, fps_slot, zone_count_slot, risk_slot) -> None:
+    """Processes and displays one frame on each auto-rerun. Streamlit does
+    not pile up overlapping reruns if a run takes longer than run_every --
+    it waits for the current one to finish and schedules the next right
+    after, so this self-paces to whatever the hardware can actually sustain.
+    (The real fix for the earlier flicker/lag was JPEG + a smaller capture
+    resolution below, not this timer value.)"""
     if not st.session_state.monitoring:
         return
 
@@ -81,7 +89,16 @@ def _live_fragment(frame_slot) -> None:
 
     rgb = cv2.cvtColor(result.annotated, cv2.COLOR_BGR2RGB)
     st.session_state.last_frame_rgb = rgb
-    frame_slot.image(rgb, channels="RGB", use_container_width=True)
+    # JPEG instead of the default PNG: noticeably faster to encode and much
+    # smaller to ship over the local websocket, which is most of the "lag"
+    # beyond the YOLO inference time itself.
+    frame_slot.image(rgb, channels="RGB", width="stretch", output_format="JPEG")
+    # Update inside the same fragment as the image, not as separate st.metric()
+    # calls in the outer script -- those only refresh on a full-page rerun,
+    # which would otherwise leave them stuck while the video itself updates.
+    fps_slot.metric("FPS", f"{result.fps:.1f}")
+    zone_count_slot.metric("People in danger zone", result.people_in_zone)
+    risk_slot.metric("Overall risk", result.overall_risk)
 
     if sound is not None:
         if st.session_state.audio_enabled and result.overall_risk == RISK_CRITICAL:
@@ -129,9 +146,12 @@ def render() -> None:
                 st.session_state.pipeline.conf_threshold = conf
 
         st.divider()
-        st.metric("FPS", f"{st.session_state.last_fps:.1f}")
-        st.metric("People in danger zone", st.session_state.last_people_in_zone)
-        st.metric("Overall risk", st.session_state.last_overall_risk)
+        fps_slot = st.empty()
+        zone_count_slot = st.empty()
+        risk_slot = st.empty()
+        fps_slot.metric("FPS", f"{st.session_state.last_fps:.1f}")
+        zone_count_slot.metric("People in danger zone", st.session_state.last_people_in_zone)
+        risk_slot.metric("Overall risk", st.session_state.last_overall_risk)
         st.caption(f"Audio alert status: {'armed' if st.session_state.audio_enabled else 'muted'}")
 
     with col_view:
@@ -139,8 +159,8 @@ def render() -> None:
         if not st.session_state.monitoring:
             if st.session_state.last_frame_rgb is not None:
                 frame_slot.image(st.session_state.last_frame_rgb, channels="RGB",
-                                  use_container_width=True, caption="Last frame (monitoring stopped)")
+                                  width="stretch", caption="Last frame (monitoring stopped)")
             else:
                 frame_slot.info("Monitoring stopped. Press Start monitoring to begin.")
         else:
-            _live_fragment(frame_slot)
+            _live_fragment(frame_slot, fps_slot, zone_count_slot, risk_slot)

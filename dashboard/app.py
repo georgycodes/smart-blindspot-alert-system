@@ -24,9 +24,9 @@ import predictive_safety  # noqa: E402
 import simulator  # noqa: E402
 import zone_configuration  # noqa: E402
 
-st.set_page_config(page_title="BlindSpot Guardian", layout="wide", page_icon="🚌")
+st.set_page_config(page_title="BlindSpot Guardian", layout="wide")
 
-st.title("🚌 BlindSpot Guardian")
+st.title("BlindSpot Guardian")
 st.caption(
     "AI-based predictive blind-spot monitoring -- software-only, webcam-driven. "
     "A rule-based engine, not a verified collision-prediction system; see README for limitations."

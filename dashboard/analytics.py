@@ -15,7 +15,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from event_manager import query_events, summary_stats
+from event_manager import query_events, summary_stats, zone_label
 from paths import CONFIG_PATH, DB_PATH, MODEL_PATH, VIDEOS_DIR
 
 REPLAY_BUFFER_FRAMES = 15
@@ -56,18 +56,19 @@ def render() -> None:
     st.subheader("Event log")
     fc1, fc2 = st.columns(2)
     risk_filter = fc1.selectbox("Filter by risk", ["All", "CRITICAL", "HIGH", "MODERATE", "LOW", "SAFE"])
+    # "zone" filter options include predicted-only labels (e.g. "FRONT (predicted)"),
+    # so this filters in Python against zone_label() rather than a raw SQL zone match.
     zone_filter = fc2.selectbox("Filter by zone", ["All"] + list(stats["by_zone"].keys()))
 
-    rows = query_events(
-        DB_PATH,
-        risk_level=None if risk_filter == "All" else risk_filter,
-        zone=None if zone_filter == "All" else zone_filter,
-    )
+    all_rows = query_events(DB_PATH, risk_level=None if risk_filter == "All" else risk_filter)
+    rows = all_rows if zone_filter == "All" else [r for r in all_rows if zone_label(r) == zone_filter]
     if rows:
         df = pd.DataFrame([dict(r) for r in rows])
+        df["zone_display"] = [zone_label(r) for r in rows]
         st.dataframe(df, use_container_width=True, hide_index=True)
 
-        fig3 = px.scatter(df, x="start_time", y="risk_level", color="risk_level", hover_data=["zone", "tracking_id"],
+        fig3 = px.scatter(df, x="start_time", y="risk_level", color="risk_level",
+                           hover_data=["zone_display", "tracking_id"],
                            title="Event timeline",
                            color_discrete_map={"SAFE": "#2ecc71", "LOW": "#2ecc71", "MODERATE": "#f1c40f",
                                                 "HIGH": "#e67e22", "CRITICAL": "#e74c3c"})
@@ -77,7 +78,7 @@ def render() -> None:
         event_ids = df["id"].tolist()
         chosen_id = st.selectbox("Event to replay", event_ids,
                                   format_func=lambda i: f"#{i} -- {df.loc[df['id'] == i, 'risk_level'].iloc[0]} "
-                                                         f"in {df.loc[df['id'] == i, 'zone'].iloc[0]} "
+                                                         f"in {df.loc[df['id'] == i, 'zone_display'].iloc[0]} "
                                                          f"({df.loc[df['id'] == i, 'source_video'].iloc[0]})")
         _render_replay(df[df["id"] == chosen_id].iloc[0])
     else:
@@ -117,7 +118,7 @@ def _render_replay(event_row) -> None:
 
     idx = st.slider("Frame", 0, len(frames_rgb) - 1, min(REPLAY_BUFFER_FRAMES, len(frames_rgb) - 1),
                      key=f"replay_slider_{event_row['id']}")
-    st.image(frames_rgb[idx], channels="RGB", use_container_width=True,
+    st.image(frames_rgb[idx], channels="RGB", width="stretch",
              caption=f"Replay frame {idx + 1}/{len(frames_rgb)}")
 
 
