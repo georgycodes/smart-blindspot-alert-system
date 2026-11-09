@@ -84,10 +84,6 @@ def render() -> None:
                                  key="zonecfg_profile_select")
     profile = data["profiles"][profile_name]
 
-    if not profile.get("validated", False):
-        st.warning(f"Profile '{profile_name}' is marked unvalidated -- zones are placeholders, "
-                   f"not calibrated against real vehicle footage.")
-
     zone_names = [z["name"] for z in profile["zones"]]
     if not zone_names:
         st.info("This profile has no zones defined yet.")
